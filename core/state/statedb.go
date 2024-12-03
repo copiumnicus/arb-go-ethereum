@@ -154,7 +154,7 @@ type AccountData struct {
 
 func (s *StateDB) IterCodeAccounts(startHash common.Hash, endHash common.Hash, codeLen *hexutil.Uint64, startsWith hexutil.Bytes) ([]AccountData, error) {
 	// Initialize the result slice
-	var accounts []AccountData
+	accounts := []AccountData{}
 
 	var codeLength int
 	if codeLen != nil {
