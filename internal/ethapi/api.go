@@ -696,6 +696,18 @@ func (n *proofList) Delete(key []byte) error {
 	panic("not supported")
 }
 
+func (api *BlockChainAPI) IterCodeAccounts(ctx context.Context, blockNrOrHash rpc.BlockNumberOrHash, startHash common.Hash, endHash common.Hash, codeLen *hexutil.Uint64, startsWith hexutil.Bytes) ([]state.AccountData, error) {
+	state, _, err := api.b.StateAndHeaderByNumberOrHash(ctx, blockNrOrHash)
+	if state == nil || err != nil {
+		return nil, fmt.Errorf("fail state and header: %s", err)
+	}
+	accounts, err := state.IterCodeAccounts(startHash, endHash, codeLen, startsWith)
+	if accounts == nil || err != nil {
+		return nil, fmt.Errorf("fail iter: %s", err)
+	}
+	return accounts, state.Error()
+}
+
 // GetProof returns the Merkle-proof for a given account and optionally some storage keys.
 func (s *BlockChainAPI) GetProof(ctx context.Context, address common.Address, storageKeys []string, blockNrOrHash rpc.BlockNumberOrHash) (*AccountResult, error) {
 	var (

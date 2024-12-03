@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state/snapshot"
 	"github.com/ethereum/go-ethereum/core/tracing"
@@ -144,6 +145,70 @@ type StateDB struct {
 	onCommit func(states *triestate.Set) // Hook invoked when commit is performed
 
 	deterministic bool
+}
+
+type AccountData struct {
+	Address common.Address `json:"address"`
+	Code    hexutil.Bytes  `json:"code"`
+}
+
+func (s *StateDB) IterCodeAccounts(startHash common.Hash, endHash common.Hash, codeLen *hexutil.Uint64, startsWith hexutil.Bytes) ([]AccountData, error) {
+	// Initialize the result slice
+	var accounts []AccountData
+
+	var codeLength int
+	if codeLen != nil {
+		codeLength = int(*codeLen)
+	} else {
+		codeLength = -1
+	}
+	// Remove right-padded zeros from endHash and create a variable-length slice
+	endSlice := endHash.Bytes()
+	endSlice = bytes.TrimRight(endSlice, "\x00")
+
+	// Create an iterator for accounts starting at the original root
+	iter, err := s.snaps.AccountIterator(s.originalRoot, startHash)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create account iterator: %w", err)
+	}
+	defer iter.Release()
+
+	for iter.Next() {
+		account, err := types.FullAccount(iter.Account())
+		if err != nil {
+			return nil, err
+		}
+		// skip if not code account
+		if bytes.Equal(account.CodeHash, types.EmptyCodeHash.Bytes()) {
+			continue
+		}
+		hash := iter.Hash()
+		// stop iter if reached end of range
+		if bytes.HasPrefix(hash.Bytes(), endSlice) {
+			break
+		}
+		preimage := rawdb.ReadPreimage(s.db.DiskDB(), hash)
+		if len(preimage) == 0 {
+			continue
+		}
+		address := common.BytesToAddress(preimage)
+		code, err := s.db.ContractCode(address, common.BytesToHash(account.CodeHash))
+		if err != nil {
+			return nil, err
+		}
+		// filter unwanted length if configured
+		if codeLength > 0 && len(code) != codeLength {
+			continue
+		}
+		// if code starts with what we asked add to res
+		if bytes.HasPrefix(code, startsWith) {
+			accounts = append(accounts, AccountData{
+				Address: address,
+				Code:    code,
+			})
+		}
+	}
+	return accounts, nil
 }
 
 // New creates a new state from a given trie.
