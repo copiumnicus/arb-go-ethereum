@@ -1557,6 +1557,35 @@ func (bc *BlockChain) writeBlockWithState(block *types.Block, receipts []*types.
 	rawdb.WriteBlock(blockBatch, block)
 	rawdb.WriteReceipts(blockBatch, block.Hash(), block.NumberU64(), receipts)
 	rawdb.WritePreimages(blockBatch, state.Preimages())
+	// save contracts that emmitted logs
+	blockNum := block.NumberU64()
+	if blockNum != 0 {
+		// Build a set of unique addresses from logs
+		addressSet := make(map[[20]byte]bool)
+		for _, r := range receipts {
+			for _, l := range r.Logs {
+				addressSet[l.Address] = true
+			}
+		}
+		failed := 0
+		success := 0
+		// get code hash for each addr and save in batch
+		for addr := range addressSet {
+			codeHash := state.GetCodeHash(addr)
+			if len(codeHash) != 0 && codeHash != types.EmptyCodeHash {
+				rawdb.WriteLogCodeAccount(blockBatch, addr, types.LogCodeAccountSer(types.LogCodeAccount{
+					LatestLogAtBlock: blockNum,
+					CodeHash:         codeHash.Bytes(),
+				}))
+				success++
+			} else {
+				failed++
+			}
+		}
+		if failed != 0 {
+			log.Warn("Log code account write summary", "success_count", success, "failed_count", failed)
+		}
+	}
 	if err := blockBatch.Write(); err != nil {
 		log.Crit("Failed to write block into disk", "err", err)
 	}

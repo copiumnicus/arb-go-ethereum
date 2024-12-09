@@ -17,6 +17,7 @@
 package ethapi
 
 import (
+	"bytes"
 	"context"
 	"encoding/hex"
 	"errors"
@@ -38,6 +39,7 @@ import (
 	"github.com/ethereum/go-ethereum/consensus"
 	"github.com/ethereum/go-ethereum/consensus/misc/eip1559"
 	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -935,6 +937,73 @@ func (s *BlockChainAPI) GetStorageAt(ctx context.Context, address common.Address
 	}
 	res := state.GetState(address, key)
 	return res[:], state.Error()
+}
+
+type AccountData struct {
+	Address common.Address `json:"address"`
+	Code    hexutil.Bytes  `json:"code"`
+}
+
+// only iter ascending
+func (api *BlockChainAPI) IterLogCodeAccounts(ctx context.Context, startAddr common.Address, endAdddr common.Address, codeLen *hexutil.Uint64, startsWith hexutil.Bytes, minBlock hexutil.Uint64) ([]AccountData, error) {
+	minBlockU := uint64(minBlock)
+	var codeLength int
+	if codeLen != nil {
+		codeLength = int(*codeLen)
+	} else {
+		codeLength = -1
+	}
+
+	accounts := make([]AccountData, 0)
+	db := api.b.ChainDb()
+	it := db.NewIterator(rawdb.LogCodeAccountPrefix, startAddr.Bytes())
+	defer it.Release()
+
+	endSlice := bytes.TrimRight(endAdddr.Bytes(), "\x00")
+
+	count := 0
+	for it.Next() {
+		count += 1
+		if len(it.Key()) < len(rawdb.LogCodeAccountPrefix) {
+			log.Warn("Weird key in lca: %v\n", common.Bytes2Hex(it.Key()))
+			break
+		}
+		key := it.Key()[len(rawdb.LogCodeAccountPrefix):]
+		if bytes.Compare(key, endSlice) > 0 {
+			// end of range
+			break
+		}
+		// I don't know why (:)) but there are also len(k)==32 keys in the table
+		if len(key) != 20 {
+			continue
+		}
+		address := common.BytesToAddress(key)
+		logAcc, err := types.LogCodeAccountDe(it.Value())
+		if err != nil {
+			return nil, fmt.Errorf("fail deser logacc: %v", err)
+		}
+		hash := common.Hash(logAcc.CodeHash)
+		// if below min skip
+		if logAcc.LatestLogAtBlock < minBlockU || hash == types.EmptyCodeHash {
+			continue
+		}
+		code := rawdb.ReadCode(db, hash)
+		// filter unwanted length if configured
+		if codeLength > 0 && len(code) != codeLength {
+			continue
+		}
+		// if code starts with what we asked add to res
+		if bytes.HasPrefix(code, startsWith) {
+			accounts = append(accounts, AccountData{
+				Address: address,
+				Code:    code,
+			})
+		}
+	}
+
+	log.Info("Got/Iterated log_code_accounts", "got", len(accounts), "iterated", count)
+
+	return accounts, nil
 }
 
 // GetBlockReceipts returns the block receipts for the given block hash or number or tag.

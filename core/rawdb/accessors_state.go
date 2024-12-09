@@ -88,6 +88,17 @@ func WriteCode(db ethdb.KeyValueWriter, hash common.Hash, code []byte) {
 	}
 }
 
+func WriteLogCodeAccount(db ethdb.KeyValueWriter, address common.Address, entry []byte) {
+	if err := db.Put(logCodeAccountKey(address), entry); err != nil {
+		log.Crit("Failed to store log code account", "err", err)
+	}
+}
+
+func ReadLogCodeAccount(db ethdb.KeyValueReader, address common.Address) []byte {
+	data, _ := db.Get(logCodeAccountKey(address))
+	return data
+}
+
 // DeleteCode deletes the specified contract code from the database.
 func DeleteCode(db ethdb.KeyValueWriter, hash common.Hash) {
 	if err := db.Delete(codeKey(hash)); err != nil {

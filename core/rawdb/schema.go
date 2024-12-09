@@ -112,6 +112,8 @@ var (
 	CodePrefix            = []byte("c") // CodePrefix + code hash -> account code
 	skeletonHeaderPrefix  = []byte("S") // skeletonHeaderPrefix + num (uint64 big endian) -> header
 
+	LogCodeAccountPrefix = []byte("LCA") // prefix + address -> rlp(types.LogCodeAccount)
+
 	// Path-based storage scheme of merkle patricia trie.
 	TrieNodeAccountPrefix = []byte("A") // TrieNodeAccountPrefix + hexPath -> trie node
 	TrieNodeStoragePrefix = []byte("O") // TrieNodeStoragePrefix + accountHash + hexPath -> trie node
@@ -239,6 +241,10 @@ func preimageKey(hash common.Hash) []byte {
 // codeKey = CodePrefix + hash
 func codeKey(hash common.Hash) []byte {
 	return append(CodePrefix, hash.Bytes()...)
+}
+
+func logCodeAccountKey(address common.Address) []byte {
+	return append(LogCodeAccountPrefix, address.Bytes()...)
 }
 
 // IsCodeKey reports whether the given byte slice is the key of contract code,
